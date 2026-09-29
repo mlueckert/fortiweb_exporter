@@ -1,0 +1,41 @@
+# Example authentication map for fortiweb_exporter.
+#
+# Entries are keyed by an arbitrary profile name, referenced via the
+# "profile" query parameter on /probe, and define the credentials and which
+# probes should run for targets using that profile.
+#
+# FortiWeb authenticates with "Authorization: <token>" where <token> is the
+# base64 encoding of {"username":"...","password":"...","vdom":"..."}.
+# The exporter builds this token from username/password/vdom (vdom defaults
+# to "root"). Alternatively, a pre-encoded "token" can be given.
+#
+# Every value can also be supplied (and overridden) per request via the
+# "username", "password", "vdom" and "token" query parameters, e.g.:
+#
+#   - targets: ['https://fortiweb.example.com']
+#     params:
+#       profile: ['default']
+#       vdom: ['root']
+
+default:
+  username: admin
+  password: secret # betterleaks:allow (example value)
+  vdom: root
+  probes:
+    include:
+      - System/Resource
+      - System/Status
+      - System/HAStatus
+      - System/Interface
+      - Policy/Status
+
+# A profile that never runs any probe (useful for temporarily disabling
+# scraping without removing the Prometheus job).
+disabled:
+  probes:
+    exclude:
+      - System/Resource
+      - System/Status
+      - System/HAStatus
+      - System/Interface
+      - Policy/Status

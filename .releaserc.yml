@@ -1,0 +1,20 @@
+---
+branches:
+  - main
+plugins:
+  - "@semantic-release/commit-analyzer"
+  - "@semantic-release/release-notes-generator"
+  - - "@semantic-release/exec"
+    - prepareCmd: "make build-release VERSION=v${nextRelease.version}"
+  - - "@semantic-release/github"
+    - assets:
+        - path: "target/fortiweb-exporter.linux.amd64"
+          label: "Linux AMD64"
+        - path: "target/fortiweb-exporter.linux.arm64"
+          label: "Linux ARM64"
+        - path: "target/fortiweb-exporter.windows.amd64.exe"
+          label: "Windows AMD64"
+        - path: "target/fortiweb-exporter.darwin.amd64"
+          label: "Darwin AMD64"
+        - path: "target/fortiweb-exporter.darwin.arm64"
+          label: "Darwin ARM64"

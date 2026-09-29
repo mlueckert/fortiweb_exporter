@@ -1,0 +1,13 @@
+*-key.yaml
+.env
+
+# build output
+/fortiweb_exporter
+/target/
+cover.out
+coverage.html
+
+# semantic-release
+node_modules/
+/local
+notes.md

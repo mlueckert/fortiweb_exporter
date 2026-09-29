@@ -1,0 +1,15 @@
+#!/bin/sh
+# Blocks commits that contain secrets, using betterleaks on the staged changes.
+# Enable with: make hooks
+# Bypass (only for false positives): git commit --no-verify
+set -e
+
+BETTERLEAKS_VERSION=v1.8.1
+
+if command -v betterleaks >/dev/null 2>&1; then
+	set -- betterleaks
+else
+	set -- go run "github.com/betterleaks/betterleaks@${BETTERLEAKS_VERSION}"
+fi
+
+exec "$@" git --pre-commit --redact --staged --verbose
