@@ -14,6 +14,8 @@ import (
 
 func TestPolicyStatus(t *testing.T) {
 	c := newFakeClient()
+	c.vdom = "root"
+	c.prepare("api/v2.0/system/vip", "testdata/system_vip.jsonnet")
 	c.prepare("api/v2.0/policy/policystatus", "testdata/policy_policyStatus.jsonnet")
 	r := prometheus.NewPedanticRegistry()
 	if !testProbe(probePolicyStatus, c, r) {
@@ -46,20 +48,24 @@ func TestPolicyStatus(t *testing.T) {
 	if len(mfs) != len(want) {
 		t.Fatalf("got %d metric families, want %d", len(mfs), len(want))
 	}
+	wantVDOMs := map[string]bool{"root": false, "tenant-a": false, "shared": false, "tenant-b": false}
 	for _, mf := range mfs {
 		v, ok := want[mf.GetName()]
 		if !ok {
 			t.Errorf("unexpected metric %q", mf.GetName())
 			continue
 		}
-		if n := len(mf.GetMetric()); n != 26 {
-			t.Errorf("%s: got %d series, want 26", mf.GetName(), n)
+		if n := len(mf.GetMetric()); n != 4*26 {
+			t.Errorf("%s: got %d series, want %d", mf.GetName(), n, 4*26)
 		}
 		found := false
 		for _, m := range mf.GetMetric() {
 			labels := map[string]string{}
 			for _, lp := range m.GetLabel() {
 				labels[lp.GetName()] = lp.GetValue()
+			}
+			if _, ok := wantVDOMs[labels["vdom"]]; ok {
+				wantVDOMs[labels["vdom"]] = true
 			}
 			if labels["name"] != wantLabels["name"] {
 				continue
@@ -70,8 +76,8 @@ func TestPolicyStatus(t *testing.T) {
 					t.Errorf("%s: label %s = %q, want %q", mf.GetName(), k, labels[k], lv)
 				}
 			}
-			if len(labels) != len(wantLabels) {
-				t.Errorf("%s: got labels %v, want %v", mf.GetName(), labels, wantLabels)
+			if len(labels) != len(wantLabels)+1 || labels["vdom"] == "" {
+				t.Errorf("%s: got labels %v, want %v plus vdom", mf.GetName(), labels, wantLabels)
 			}
 			if got := m.GetGauge().GetValue(); got != v {
 				t.Errorf("%s: got %v, want %v", mf.GetName(), got, v)
@@ -79,6 +85,23 @@ func TestPolicyStatus(t *testing.T) {
 		}
 		if !found {
 			t.Errorf("%s: series for %q not found", mf.GetName(), wantLabels["name"])
+		}
+	}
+	for vdom, found := range wantVDOMs {
+		if !found {
+			t.Errorf("no policy series found for VDOM %q", vdom)
+		}
+	}
+
+	if len(*c.requests) != 5 {
+		t.Fatalf("got %d requests, want one VDOM discovery and four policy requests", len(*c.requests))
+	}
+	if got := (*c.requests)[0]; got.path != "api/v2.0/system/vip" || got.vdom != "root" {
+		t.Errorf("VDOM discovery request = %+v, want root system/vip request", got)
+	}
+	for i, vdom := range []string{"root", "tenant-a", "shared", "tenant-b"} {
+		if got := (*c.requests)[i+1]; got.path != "api/v2.0/policy/policystatus" || got.vdom != vdom {
+			t.Errorf("policy request %d = %+v, want VDOM %q", i, got, vdom)
 		}
 	}
 }

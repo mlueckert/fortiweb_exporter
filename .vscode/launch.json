@@ -10,8 +10,8 @@
             "request": "launch",
             "mode": "debug",
             "program": "${workspaceFolder}/main.go",
-            //"args": ["-auth-file", "./fortiweb-key.yaml"]
-            "args": ["-auth-file", "./fortiweb-key.yaml", "-allowed-subnets", "10.1.51.65"]
+            "args": ["-auth-file", "./fortiweb-key.yaml"]
+            //"args": ["-auth-file", "./fortiweb-key.yaml", "-allowed-subnets", "10.1.51.65"]
             //"args": ["-h"]
         },
     ]

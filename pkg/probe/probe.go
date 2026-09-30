@@ -33,10 +33,9 @@ type probeDetailedFunc struct {
 }
 
 // Probe connects to the target FortiWeb device given in target["target"],
-// authenticating with target["token"] or target["username"],
-// target["password"] and target["vdom"] (falling back to the values of the
-// profile named in target["profile"]), and runs all probes selected by that
-// profile (or all probes if no profile with a probe selection is registered).
+// authenticating with target["username"] and target["password"] (falling back to the values of the profile named in
+// target["profile"]), and runs all selected probes. System probes use the root
+// VDOM; policy status is collected once for each VDOM discovered from system/vip.
 func (p *ProbeCollector) Probe(ctx context.Context, target map[string]string, hc *http.Client, savedConfig config.FortiWebExporterConfig) (bool, error) {
 	tgt, err := url.Parse(target["target"])
 	if err != nil {
@@ -59,7 +58,6 @@ func (p *ProbeCollector) Probe(ctx context.Context, target map[string]string, hc
 	if err != nil {
 		return false, err
 	}
-
 	includedProbes := auth.Probes.Include
 	excludedProbes := auth.Probes.Exclude
 
@@ -107,26 +105,14 @@ func (p *ProbeCollector) Probe(ctx context.Context, target map[string]string, hc
 	return success, nil
 }
 
-// resolveAuth merges the request parameters over the profile. If any of
-// token/username/password/vdom is given as parameter it overrides the profile
-// value. A token given as parameter takes precedence over any credentials,
-// and credentials given as parameter take precedence over a profile token.
+// resolveAuth merges request credentials over the profile.
 func resolveAuth(params map[string]string, profile config.TargetAuth) config.TargetAuth {
 	auth := profile
-	if params["username"] != "" || params["password"] != "" {
-		auth.Token = ""
-	}
 	if v := params["username"]; v != "" {
 		auth.Username = v
 	}
 	if v := params["password"]; v != "" {
 		auth.Password = v
-	}
-	if v := params["vdom"]; v != "" {
-		auth.Vdom = v
-	}
-	if v := params["token"]; v != "" {
-		auth.Token = config.Token(v)
 	}
 	return auth
 }

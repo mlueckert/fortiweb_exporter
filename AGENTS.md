@@ -18,7 +18,7 @@ Go style rules live in `.claude/rules/go.instructions.md`; follow them for all `
 
 - `main.go` – entrypoint, HTTP server, IP restriction middleware, build info (`Version`, `GitHash` injected via `-ldflags`).
 - `internal/config` – CLI flags and the auth map file (`fortiweb-key.yaml`, see `fortiweb-key.yaml.example`).
-- `pkg/http` – FortiWeb API client (`FortiHTTP` interface). Authenticates with `Authorization: <base64 {"username","password","vdom"}>` or a pre-encoded token.
+- `pkg/http` – FortiWeb API client (`FortiHTTP` interface). Generates `Authorization: <base64 {"username","password","vdom"}>` from configured credentials.
 - `pkg/probe` – `probe.go` holds the probe registry and include/exclude logic; one file per probe (`<area>_<name>.go`) with a matching `_test.go`.
 - `pkg/probe/testdata/*.jsonnet` – API response fixtures, named after the endpoint (e.g. `system_status_systemstatus.jsonnet` for `api/v2.0/system/status.systemstatus`).
 - `docs/` – FortiWeb 8.0 Monitor API specs (JSON). Use these to find endpoints and response fields.
@@ -47,6 +47,11 @@ Always run `make test` before finishing a change.
 3. Register it in the probe list in `pkg/probe/probe.go` with a category name (e.g. `System/Status`, `Policy/Status`).
 4. Look for a jsonnet fixture in `pkg/probe/testdata/` and create tests that use `newFakeClient()`, `c.prepare(...)`, `testProbe(...)` and `testutil.GatherAndCompare`, plus an error case using `&brokenClient{}`. If not jsonnet files are there, ask the dev to get it from a real device.
 5. Update the "Metrics" section of `README.md` and the probe lists in `fortiweb-key.yaml.example`.
+
+System probes must run with the root VDOM authorization token. Policy status
+discovers VDOM names from the space-separated `domains` fields returned by
+`api/v2.0/system/vip`, de-duplicates them, and requests policy status once per
+VDOM. Include a `vdom` label on policy metrics.
 
 Metric rules:
 - Prefix with `fortiweb_`, follow Prometheus naming (base units such as `_seconds`/`_bytes`, `_total` for counters, `_ratio` for 0–1 values, `_info` for info metrics with value 1).

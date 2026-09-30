@@ -12,6 +12,7 @@ import (
 
 	"errors"
 
+	fortiHTTP "github.com/mlueckert/fortiweb_exporter/pkg/http"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
@@ -65,4 +66,8 @@ type brokenClient struct{}
 
 func (b *brokenClient) Get(path string, query string, obj interface{}) error {
 	return errors.New("simulated error")
+}
+
+func (b *brokenClient) WithVdom(string) (fortiHTTP.FortiHTTP, error) {
+	return b, nil
 }

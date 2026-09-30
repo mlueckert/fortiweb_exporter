@@ -15,7 +15,7 @@ The following probes are implemented:
 | `System/Status` | `api/v2.0/system/status.systemstatus` |
 | `System/HAStatus` | `api/v2.0/system/status.hastatus` |
 | `System/Interface` | `api/v2.0/system/status.systemoperation` |
-| `Policy/Status` | `api/v2.0/policy/policystatus` |
+| `Policy/Status` | `api/v2.0/system/vip` and `api/v2.0/policy/policystatus` |
 
 The endpoint schemas are documented in [docs/](docs).
 
@@ -41,11 +41,11 @@ The endpoint schemas are documented in [docs/](docs).
 | `fortiweb_interface_receive_packets_total{interface}` | Packets received on the interface |
 | `fortiweb_interface_transmit_bytes_total{interface}` | Bytes transmitted on the interface |
 | `fortiweb_interface_receive_bytes_total{interface}` | Bytes received on the interface |
-| `fortiweb_policy_sessions{policy,name,status,protocol,http_port,https_port,mode}` | Current amount of sessions per policy |
-| `fortiweb_policy_connections_per_second{...}` | Current amount of new connections per second per policy |
-| `fortiweb_policy_client_rtt{...}` | Client round trip time per policy, as reported by FortiWeb |
-| `fortiweb_policy_server_rtt{...}` | Server round trip time per policy, as reported by FortiWeb |
-| `fortiweb_policy_app_response_time{...}` | Application response time per policy, as reported by FortiWeb |
+| `fortiweb_policy_sessions{vdom,policy,name,status,protocol,http_port,https_port,mode}` | Current amount of sessions per policy and VDOM |
+| `fortiweb_policy_connections_per_second{vdom,...}` | Current amount of new connections per second per policy and VDOM |
+| `fortiweb_policy_client_rtt{vdom,...}` | Client round trip time per policy and VDOM, as reported by FortiWeb |
+| `fortiweb_policy_server_rtt{vdom,...}` | Server round trip time per policy and VDOM, as reported by FortiWeb |
+| `fortiweb_policy_app_response_time{vdom,...}` | Application response time per policy and VDOM, as reported by FortiWeb |
 | `fortiweb_exporter_build_info{version,revision}` | Exporter build information |
 
 ## Configuration
@@ -54,22 +54,29 @@ The endpoint schemas are documented in [docs/](docs).
 
 FortiWeb authenticates with an `Authorization: <token>` header, where
 `<token>` is the base64 encoding of
-`{"username":"...","password":"...","vdom":"..."}`. The exporter builds
-this token from `username`, `password` and `vdom` (default `root`).
+`{"username":"...","password":"...","vdom":"..."}`. The exporter creates this
+token from `username` and `password` for each request. System probes always use
+the `root` VDOM.  
+Source: <https://fndn.fortinet.net/index.php?/fortiapi/939-fortiweb/966/> (Login required)  
+
+For policy status, the exporter reads the space-separated
+`domains` fields from `api/v2.0/system/vip`, de-duplicates the VDOM names, and
+queries `api/v2.0/policy/policystatus` once per VDOM.  This has been done this way because the /system/adoms endpoint that would give us the list of VDOMs is only accessible with higher privileges.
+Policy metrics include a `vdom` label so policies with the same name in different VDOMs remain distinct.
 
 Each `/probe` request carries `target` and (optionally) `profile` query
 parameters. The `profile` names an entry in the auth-file (see
-[fortiweb-key.yaml.example](fortiweb-key.yaml.example)) which can hold
-`username`, `password`, `vdom` (or a pre-encoded `token`) and selects which
+[fortiweb-key.yaml.example](fortiweb-key.yaml.example)) which holds `username` and `password` and selects which
 probes should run for that target, via `probes.include` and/or
 `probes.exclude` lists of probe name prefixes (`System/Resource`,
 `System/Status`, `System/HAStatus`, `System/Interface`, `Policy/Status`). If a profile is omitted or has no probe
 selection, all probes run.
 
-The credentials can also be passed (or overridden) per request with the
-`username`, `password`, `vdom` query parameters, or a pre-encoded `token`
-query parameter. Request parameters take precedence over the profile; a
-`token` parameter takes precedence over credentials.
+Credentials can also be passed (or overridden) per request with the
+`username` and `password` query parameters. Request parameters take
+precedence over the profile. Pre-encoded tokens and explicit VDOM settings
+are not supported: system probes use `root`, and the policy probe generates
+a separate token and request for each VDOM discovered from VIP domains.
 
 Point the exporter at your auth-file with `-auth-file` (default
 `fortiweb-key.yaml`).
@@ -78,8 +85,9 @@ Point the exporter at your auth-file with `-auth-file` (default
 
 Both `/metrics` and `/probe` are protected by an IP allow-list, configured
 with `-allowed-subnets` (comma-separated list of IP prefixes; default
-`0.0.0.0`, which allows any IP). Requests from IPs that don't match any
-configured prefix receive `403 Forbidden`.
+`0.0.0.0`, which allows any IP).  
+This is implemented with a simple substring match against the allowed prefixes.  
+Requests from IPs that don't match any configured prefix receive `403 Forbidden`.
 
 ### Flags
 
@@ -107,7 +115,7 @@ Scrape a FortiWeb device via `/probe`:
 curl 'http://localhost:9723/probe?target=https://fortiweb.example.com&profile=default'
 
 # or with credentials passed per request
-curl 'http://localhost:9723/probe?target=https://fortiweb.example.com&username=admin&password=<password>&vdom=root'
+curl 'http://localhost:9723/probe?target=https://fortiweb.example.com&username=admin&password=<password>'
 ```
 
 Example Prometheus scrape config:
@@ -120,7 +128,6 @@ scrape_configs:
       - targets: ['https://fortiweb.example.com']
     params:
       profile: ['default']
-      vdom: ['root']
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target

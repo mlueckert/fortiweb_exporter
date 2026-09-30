@@ -19,11 +19,19 @@ import (
 
 // fakeClient is a minimal in-memory FortiHTTP implementation for tests.
 type fakeClient struct {
-	data map[string][]byte
+	data     map[string][]byte
+	vdom     string
+	requests *[]fakeRequest
+}
+
+type fakeRequest struct {
+	path string
+	vdom string
 }
 
 func newFakeClient() *fakeClient {
-	return &fakeClient{data: map[string][]byte{}}
+	requests := []fakeRequest{}
+	return &fakeClient{data: map[string][]byte{}, requests: &requests}
 }
 
 // prepare registers the evaluated jsonnet file jfile as response for path.
@@ -40,7 +48,14 @@ func (c *fakeClient) Get(path string, query string, obj interface{}) error {
 	if !ok {
 		log.Fatalf("Tried to get unprepared URL %q", path)
 	}
+	if c.requests != nil {
+		*c.requests = append(*c.requests, fakeRequest{path: path, vdom: c.vdom})
+	}
 	return json.Unmarshal(d, obj)
+}
+
+func (c *fakeClient) WithVdom(vdom string) (http.FortiHTTP, error) {
+	return &fakeClient{data: c.data, vdom: vdom, requests: c.requests}, nil
 }
 
 type Registry interface {

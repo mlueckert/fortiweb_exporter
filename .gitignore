@@ -6,6 +6,7 @@
 /target/
 cover.out
 coverage.html
+__debug_*
 
 # semantic-release
 node_modules/

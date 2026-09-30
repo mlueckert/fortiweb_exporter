@@ -6,21 +6,21 @@
 #
 # FortiWeb authenticates with "Authorization: <token>" where <token> is the
 # base64 encoding of {"username":"...","password":"...","vdom":"..."}.
-# The exporter builds this token from username/password/vdom (vdom defaults
-# to "root"). Alternatively, a pre-encoded "token" can be given.
+# The exporter builds this token from username/password. System probes use the
+# root VDOM; policy probes discover VDOMs from the "domains" field returned by
+# api/v2.0/system/vip and issue a separate request with its own generated
+# token for each VDOM.
 #
-# Every value can also be supplied (and overridden) per request via the
-# "username", "password", "vdom" and "token" query parameters, e.g.:
+# Credentials can also be supplied (and overridden) per request via the
+# "username" and "password" query parameters, e.g.:
 #
 #   - targets: ['https://fortiweb.example.com']
 #     params:
 #       profile: ['default']
-#       vdom: ['root']
 
 default:
   username: admin
   password: secret # betterleaks:allow (example value)
-  vdom: root
   probes:
     include:
       - System/Resource

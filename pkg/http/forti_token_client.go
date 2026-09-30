@@ -34,13 +34,16 @@ type HTTPClient interface {
 // FortiHTTP is the interface used by probes to talk to a FortiWeb device.
 type FortiHTTP interface {
 	Get(path string, query string, obj interface{}) error
+	// WithVdom returns a client using the same credentials scoped to vdom.
+	WithVdom(vdom string) (FortiHTTP, error)
 }
 
 type fortiTokenClient struct {
-	tgt url.URL
-	hc  HTTPClient
-	ctx context.Context
-	tok config.Token
+	tgt  url.URL
+	hc   HTTPClient
+	ctx  context.Context
+	tok  config.Token
+	auth config.TargetAuth
 }
 
 func (c *fortiTokenClient) newGetRequest(url string) (*http.Request, error) {
@@ -97,17 +100,24 @@ func (c *fortiTokenClient) String() string {
 	return c.tgt.String()
 }
 
-func newFortiTokenClient(ctx context.Context, tgt url.URL, hc HTTPClient, token config.Token) (*fortiTokenClient, error) {
-	return &fortiTokenClient{tgt, hc, ctx, token}, nil
+func (c *fortiTokenClient) WithVdom(vdom string) (FortiHTTP, error) {
+	token, err := EncodeToken(c.auth.Username, c.auth.Password, vdom)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create authorization token for VDOM %q: %w", vdom, err)
+	}
+
+	return &fortiTokenClient{
+		tgt:  c.tgt,
+		hc:   c.hc,
+		ctx:  c.ctx,
+		tok:  token,
+		auth: c.auth,
+	}, nil
 }
 
 // EncodeToken builds a FortiWeb API token: the base64 encoding of
-// {"username":"...","password":"...","vdom":"..."}. An empty vdom defaults
-// to config.DefaultVdom.
+// {"username":"...","password":"...","vdom":"..."}.
 func EncodeToken(username, password, vdom string) (config.Token, error) {
-	if vdom == "" {
-		vdom = config.DefaultVdom
-	}
 	b, err := json.Marshal(struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
@@ -119,16 +129,12 @@ func EncodeToken(username, password, vdom string) (config.Token, error) {
 	return config.Token(base64.StdEncoding.EncodeToString(b)), nil
 }
 
-// ResolveToken returns auth.Token if set, otherwise a token encoded from
-// auth.Username, auth.Password and auth.Vdom.
+// ResolveToken builds a root-scoped token from the configured credentials.
 func ResolveToken(auth config.TargetAuth) (config.Token, error) {
-	if auth.Token != "" {
-		return auth.Token, nil
-	}
 	if auth.Username == "" || auth.Password == "" {
-		return "", fmt.Errorf("either token or username and password are required")
+		return "", fmt.Errorf("username and password are required")
 	}
-	return EncodeToken(auth.Username, auth.Password, auth.Vdom)
+	return EncodeToken(auth.Username, auth.Password, config.DefaultVdom)
 }
 
 // NewFortiClient creates a FortiHTTP client for tgt using the given
@@ -143,7 +149,13 @@ func NewFortiClient(ctx context.Context, tgt url.URL, hc *http.Client, auth conf
 		return nil, fmt.Errorf("invalid authentication data for %q: %v", tgt.String(), err)
 	}
 
-	return newFortiTokenClient(ctx, tgt, hc, token)
+	return &fortiTokenClient{
+		tgt:  tgt,
+		hc:   hc,
+		ctx:  ctx,
+		tok:  token,
+		auth: auth,
+	}, nil
 }
 
 // Configure applies TLS settings (extra trusted CAs, handshake timeout,

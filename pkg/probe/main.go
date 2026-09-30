@@ -19,16 +19,21 @@ import (
 )
 
 // ProbeHandler is the http.HandlerFunc for the /probe endpoint. It expects
-// "target" (required), "profile", and either "token" or "username",
-// "password" and "vdom" query parameters.
+// "target" (required), "profile", "username" and "password" query parameters.
 func ProbeHandler(w http.ResponseWriter, r *http.Request) {
-	savedConfig := config.GetConfig()
-
 	params := r.URL.Query()
 	paramMap := make(map[string]string)
 	target := params.Get("target")
 	paramMap["target"] = params.Get("target")
-	for _, k := range []string{"token", "username", "password", "vdom", "profile"} {
+	if _, supplied := params["token"]; supplied {
+		http.Error(w, "Token parameter is not supported; supply username and password", http.StatusBadRequest)
+		return
+	}
+	if _, supplied := params["vdom"]; supplied {
+		http.Error(w, "VDOM parameter is not supported; policy VDOMs are discovered automatically", http.StatusBadRequest)
+		return
+	}
+	for _, k := range []string{"username", "password", "profile"} {
 		if v := params.Get(k); v != "" {
 			paramMap[k] = v
 		}
@@ -38,6 +43,7 @@ func ProbeHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Target parameter missing or empty", http.StatusBadRequest)
 		return
 	}
+	savedConfig := config.GetConfig()
 	probeSuccessGauge := prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "probe_success",
 		Help: "Whether or not the probe succeeded",

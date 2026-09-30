@@ -48,12 +48,10 @@ type AuthKeys map[Target]TargetAuth
 // "https://fortiweb.example.com") or the name of a probe profile.
 type Target string
 
-// Token is a FortiWeb API access token, i.e. the base64 encoded JSON
-// {"username":"...","password":"...","vdom":"..."} sent verbatim in the
-// Authorization header.
+// Token is a generated FortiWeb API authorization value.
 type Token string
 
-// DefaultVdom is used when no vdom is configured.
+// DefaultVdom is used for system requests.
 const DefaultVdom = "root"
 
 // ProbeList is a list of probe name prefixes, e.g. "System/Resource".
@@ -67,13 +65,11 @@ type Probes struct {
 
 // TargetAuth is the authentication and probe selection for a Target.
 //
-// Either Token (an already encoded token) or Username/Password/Vdom can be
-// given. If Token is empty, it is built from Username/Password/Vdom.
+// Username and Password are used to generate authorization for the root VDOM
+// and for each VDOM queried by the policy probe.
 type TargetAuth struct {
-	Token    Token
 	Username string
 	Password string
-	Vdom     string
 	Probes   Probes
 }
 
@@ -132,7 +128,8 @@ func ReInit() error {
 		return err
 	}
 
-	if err := yaml.Unmarshal(af, &savedConfig.AuthKeys); err != nil {
+	savedConfig.AuthKeys, err = parseAuthKeys(af)
+	if err != nil {
 		log.Fatalf("Failed to parse API authentication map file: %v", err)
 		return err
 	}
@@ -167,6 +164,14 @@ func ReInit() error {
 	}
 
 	return nil
+}
+
+func parseAuthKeys(data []byte) (AuthKeys, error) {
+	var keys AuthKeys
+	if err := yaml.UnmarshalStrict(data, &keys); err != nil {
+		return nil, err
+	}
+	return keys, nil
 }
 
 // GetConfig returns a copy of the currently loaded configuration.

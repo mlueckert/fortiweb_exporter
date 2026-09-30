@@ -9,6 +9,7 @@ package probe
 import (
 	"log"
 	"strconv"
+	"strings"
 
 	"github.com/mlueckert/fortiweb_exporter/pkg/http"
 	"github.com/prometheus/client_golang/prometheus"
@@ -35,8 +36,16 @@ type policyStatusResponse struct {
 	Results []policyStatusResult `json:"results"`
 }
 
+type systemVIP struct {
+	Domains string `json:"domains"`
+}
+
+type systemVIPResponse struct {
+	Results []systemVIP `json:"results"`
+}
+
 func probePolicyStatus(c http.FortiHTTP) ([]prometheus.Metric, bool) {
-	labels := []string{"policy", "name", "status", "protocol", "http_port", "https_port", "mode"}
+	labels := []string{"vdom", "policy", "name", "status", "protocol", "http_port", "https_port", "mode"}
 	var (
 		mSessionCount = prometheus.NewDesc(
 			"fortiweb_policy_sessions",
@@ -65,22 +74,55 @@ func probePolicyStatus(c http.FortiHTTP) ([]prometheus.Metric, bool) {
 		)
 	)
 
-	var r policyStatusResponse
-	if err := c.Get("api/v2.0/policy/policystatus", "", &r); err != nil {
+	var vdomResponse systemVIPResponse
+	if err := c.Get("api/v2.0/system/vip", "", &vdomResponse); err != nil {
 		log.Printf("Error: %v", err)
 		return nil, false
 	}
 
-	m := []prometheus.Metric{}
-	for _, p := range r.Results {
-		lv := []string{strconv.Itoa(p.Policy), p.Name, p.Status, p.Protocol, p.HTTPPort, p.HTTPSPort, p.Mode}
-		m = append(m,
-			prometheus.MustNewConstMetric(mSessionCount, prometheus.GaugeValue, float64(p.SessionCount), lv...),
-			prometheus.MustNewConstMetric(mConnCntPerSec, prometheus.GaugeValue, float64(p.ConnCntPerSec), lv...),
-			prometheus.MustNewConstMetric(mClientRTT, prometheus.GaugeValue, float64(p.ClientRTT), lv...),
-			prometheus.MustNewConstMetric(mServerRTT, prometheus.GaugeValue, float64(p.ServerRTT), lv...),
-			prometheus.MustNewConstMetric(mAppResponseTime, prometheus.GaugeValue, float64(p.AppResponseTime), lv...),
-		)
+	vdoms := make([]string, 0)
+	seenVDOMs := make(map[string]struct{})
+	for _, vip := range vdomResponse.Results {
+		for _, vdom := range strings.Fields(vip.Domains) {
+			if _, exists := seenVDOMs[vdom]; exists {
+				continue
+			}
+			seenVDOMs[vdom] = struct{}{}
+			vdoms = append(vdoms, vdom)
+		}
 	}
-	return m, true
+	if len(vdoms) == 0 {
+		log.Printf("Error: system/vip returned no VDOMs in domains")
+		return nil, false
+	}
+
+	success := true
+	m := []prometheus.Metric{}
+	for _, vdom := range vdoms {
+		vdomClient, err := c.WithVdom(vdom)
+		if err != nil {
+			log.Printf("Error: unable to create client for VDOM %q: %v", vdom, err)
+			success = false
+			continue
+		}
+
+		var r policyStatusResponse
+		if err := vdomClient.Get("api/v2.0/policy/policystatus", "", &r); err != nil {
+			log.Printf("Error: unable to get policy status for VDOM %q: %v", vdom, err)
+			success = false
+			continue
+		}
+
+		for _, p := range r.Results {
+			lv := []string{vdom, strconv.Itoa(p.Policy), p.Name, p.Status, p.Protocol, p.HTTPPort, p.HTTPSPort, p.Mode}
+			m = append(m,
+				prometheus.MustNewConstMetric(mSessionCount, prometheus.GaugeValue, float64(p.SessionCount), lv...),
+				prometheus.MustNewConstMetric(mConnCntPerSec, prometheus.GaugeValue, float64(p.ConnCntPerSec), lv...),
+				prometheus.MustNewConstMetric(mClientRTT, prometheus.GaugeValue, float64(p.ClientRTT), lv...),
+				prometheus.MustNewConstMetric(mServerRTT, prometheus.GaugeValue, float64(p.ServerRTT), lv...),
+				prometheus.MustNewConstMetric(mAppResponseTime, prometheus.GaugeValue, float64(p.AppResponseTime), lv...),
+			)
+		}
+	}
+	return m, success
 }
